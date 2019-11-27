@@ -50,7 +50,8 @@ def summary(model, *args, **kwargs):
         module.register_forward_hook(hook)
 
     # make a forward pass
-    model(*args, **kwargs)
+    with torch.no_grad():
+        model(*args, **kwargs)
 
     layer_name_width = max(max(map(len, map(op.itemgetter('name'), summary))), 20)
     layer_type_width = max(max(map(len, map(op.itemgetter('type'), summary))), 20)

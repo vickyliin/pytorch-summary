@@ -8,6 +8,10 @@ from collections import OrderedDict
 import numpy as np
 
 
+def _sizeof(tensor):
+    storage = tensor.storage()
+    return storage.size() * storage.element_size()
+
 def summary(model, *args, **kwargs):
 
     def register_hook(module):
@@ -27,9 +31,11 @@ def summary(model, *args, **kwargs):
                 summary[m_key]["output_shape"] = [
                     [-1] + list(o.size())[1:] for o in output
                 ]
+                summary[m_key]["total_output_size"] = sum(map(_sizeof, output))
             else:
                 summary[m_key]["output_shape"] = list(output.size())
                 summary[m_key]["output_shape"][0] = -1
+                summary[m_key]["total_output_size"] = _sizeof(output)
 
             params = 0
             if hasattr(module, "weight") and hasattr(module.weight, "size"):
@@ -65,7 +71,7 @@ def summary(model, *args, **kwargs):
     print(line_new)
     print("================================================================")
     total_params = 0
-    total_output = 0
+    total_output_size = 0
     trainable_params = 0
     for layer in summary:
         # input_shape, output_shape, trainable, nb_params
@@ -75,19 +81,17 @@ def summary(model, *args, **kwargs):
             "{0:,}".format(summary[layer]["nb_params"]),
         )
         total_params += summary[layer]["nb_params"]
-        total_output += np.prod(summary[layer]["output_shape"])
+        total_output_size += summary[layer]["total_output_size"]
         if "trainable" in summary[layer]:
             if summary[layer]["trainable"] == True:
                 trainable_params += summary[layer]["nb_params"]
         print(line_new)
 
     # assume 4 bytes/number (float on cuda).
-    input_storage = (
-        tensor.storage() for tensor in it.chain(args, kwargs.values())
-        if isinstance(tensor, torch.Tensor)
-    )
-    total_input_size = sum(s.size() * s.element_size() for s in input_storage) / (1024 ** 2.)
-    total_output_size = abs(2. * total_output * 4. / (1024 ** 2.))  # x2 for gradients
+    input_tensors = filter(lambda i: isinstance(i, torch.Tensor),
+                           it.chain(args, kwargs.values()))
+    total_input_size = sum(map(_sizeof, input_tensors)) / (1024 ** 2.)
+    total_output_size = 2. * total_output_size / (1024 ** 2.)  # x2 for gradients
     total_params_size = abs(total_params.numpy() * 4. / (1024 ** 2.))
     total_size = total_params_size + total_output_size + total_input_size
 

@@ -1,3 +1,5 @@
+import itertools as it
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -6,25 +8,28 @@ from collections import OrderedDict
 import numpy as np
 
 
-def summary(model, input_size, batch_size=-1, device="cuda"):
+def summary(model, *args, **kwargs):
 
     def register_hook(module):
 
         def hook(module, input, output):
-            class_name = str(module.__class__).split(".")[-1].split("'")[0]
+            if not input:
+                return
+
+            class_name = module.__class__.__name__
             module_idx = len(summary)
 
             m_key = "%s-%i" % (class_name, module_idx + 1)
             summary[m_key] = OrderedDict()
             summary[m_key]["input_shape"] = list(input[0].size())
-            summary[m_key]["input_shape"][0] = batch_size
+            summary[m_key]["input_shape"][0] = -1
             if isinstance(output, (list, tuple)):
                 summary[m_key]["output_shape"] = [
                     [-1] + list(o.size())[1:] for o in output
                 ]
             else:
                 summary[m_key]["output_shape"] = list(output.size())
-                summary[m_key]["output_shape"][0] = batch_size
+                summary[m_key]["output_shape"][0] = -1
 
             params = 0
             if hasattr(module, "weight") and hasattr(module.weight, "size"):
@@ -41,25 +46,6 @@ def summary(model, input_size, batch_size=-1, device="cuda"):
         ):
             hooks.append(module.register_forward_hook(hook))
 
-    device = device.lower()
-    assert device in [
-        "cuda",
-        "cpu",
-    ], "Input device is not valid, please specify 'cuda' or 'cpu'"
-
-    if device == "cuda" and torch.cuda.is_available():
-        dtype = torch.cuda.FloatTensor
-    else:
-        dtype = torch.FloatTensor
-
-    # multiple inputs to the network
-    if isinstance(input_size, tuple):
-        input_size = [input_size]
-
-    # batch_size of 2 for batchnorm
-    x = [torch.rand(2, *in_size).type(dtype) for in_size in input_size]
-    # print(type(x[0]))
-
     # create properties
     summary = OrderedDict()
     hooks = []
@@ -68,8 +54,7 @@ def summary(model, input_size, batch_size=-1, device="cuda"):
     model.apply(register_hook)
 
     # make a forward pass
-    # print(x.shape)
-    model(*x)
+    model(*args, **kwargs)
 
     # remove these hooks
     for h in hooks:
@@ -97,7 +82,11 @@ def summary(model, input_size, batch_size=-1, device="cuda"):
         print(line_new)
 
     # assume 4 bytes/number (float on cuda).
-    total_input_size = abs(np.prod(input_size) * batch_size * 4. / (1024 ** 2.))
+    input_storage = (
+        tensor.storage() for tensor in it.chain(args, kwargs.values())
+        if isinstance(tensor, torch.Tensor)
+    )
+    total_input_size = sum(s.size() * s.element_size() for s in input_storage) / (1024 ** 2.)
     total_output_size = abs(2. * total_output * 4. / (1024 ** 2.))  # x2 for gradients
     total_params_size = abs(total_params.numpy() * 4. / (1024 ** 2.))
     total_size = total_params_size + total_output_size + total_input_size

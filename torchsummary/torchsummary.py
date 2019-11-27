@@ -1,11 +1,8 @@
-import operator as op
 import itertools as it
+import operator as op
 
 import torch
-import torch.nn as nn
-from torch.autograd import Variable
-
-import numpy as np
+from torch import nn
 
 
 def _sizeof(tensor):

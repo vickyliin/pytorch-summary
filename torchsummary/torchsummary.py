@@ -12,24 +12,28 @@ def _sizeof(tensor):
     storage = tensor.storage()
     return storage.size() * storage.element_size()
 
+def _total_numel(tensors):
+    return sum(map(torch.Tensor.numel, tensors))
+
+def _shape_and_sizeof(tensors):
+    if isinstance(tensors, torch.Tensor):
+        tensors = [tensors]
+    shape = [tuple(o.size()) for o in tensors]
+    size = sum(map(_sizeof, tensors))
+    return shape, size
+
 def _get_hook(summary, name):
 
     def summary_hook(module, input, output):
-        class_name = module.__class__.__name__
-
         layer = {}
-        layer["name"] = "%s (%s)" % (name, class_name)
-        if isinstance(output, (list, tuple)):
-            layer["output_shape"] = [tuple(o.size()) for o in output]
-            layer["total_output_size"] = sum(map(_sizeof, output))
-        else:
-            layer["output_shape"] = [tuple(output.size())]
-            layer["total_output_size"] = _sizeof(output)
-
+        layer["name"] = "%s (%s)" % (name, type(module).__name__)
+        layer["input_shape"], layer["total_input_size"] = _shape_and_sizeof(input)
+        layer["output_shape"], layer["total_output_size"] = _shape_and_sizeof(output)
         layer["total_param_size"] = sum(map(_sizeof, module.parameters()))
-        layer["nb_params"] = sum(map(torch.Tensor.numel, module.parameters()))
+        layer["nb_params"] = _total_numel(module.parameters())
+
         trainable_params = filter(op.attrgetter('requires_grad'), module.parameters())
-        layer["nb_trainable_params"] = sum(map(torch.Tensor.numel, trainable_params))
+        layer["nb_trainable_params"] = _total_numel(trainable_params)
 
         summary.append(layer)
 
@@ -48,13 +52,14 @@ def summary(model, *args, **kwargs):
     model(*args, **kwargs)
 
     layer_width = max(max(map(len, map(op.itemgetter('name'), summary))), 20)
-    output_shape_width = 40
-    line_width = layer_width + output_shape_width + 15 + 5
+    shape_width, param_width = 40, 15
+    fmt = "{:<%d}  {:<%d} {:<%d} {:>%d}" % (layer_width, shape_width, shape_width, param_width)
+
+    line_width = layer_width + 2 * shape_width + param_width + 5
     line = "-" * line_width
     dline = "=" * line_width
-    fmt = "{:<%d}  {:^%d} {:>15}" % (layer_width, output_shape_width)
     print(line)
-    line_new = fmt.format("Layer (type)", "Output Shape", "Param #")
+    line_new = fmt.format("Layer (type)", "Input Shape", "Output Shape", "Param #")
     print(line_new)
     print(dline)
     layer_names = set()
@@ -62,6 +67,10 @@ def summary(model, *args, **kwargs):
     total_param_size = 0
     total_output_size = 0
     trainable_params = 0
+
+    def format_shapes(shapes):
+        return ' '.join(map(str, shapes))
+
     for layer in summary:
         name = layer["name"]
 
@@ -75,8 +84,9 @@ def summary(model, *args, **kwargs):
 
         total_output_size += layer["total_output_size"]
 
-        output_shape = ' '.join(map(str, layer["output_shape"]))
-        print(fmt.format(name, output_shape, nb_params))
+        output_shape = format_shapes(layer["output_shape"])
+        input_shape = format_shapes(layer["input_shape"])
+        print(fmt.format(name, input_shape, output_shape, nb_params))
 
     # assume 4 bytes/number (float on cuda).
     input_tensors = filter(lambda i: isinstance(i, torch.Tensor),

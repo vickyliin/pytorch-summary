@@ -26,7 +26,8 @@ def _get_hook(summary, name):
 
     def summary_hook(module, input, output):
         layer = {}
-        layer["name"] = "%s (%s)" % (name, type(module).__name__)
+        layer["name"] = name
+        layer["type"] = type(module).__name__
         layer["input_shape"], layer["total_input_size"] = _shape_and_sizeof(input)
         layer["output_shape"], layer["total_output_size"] = _shape_and_sizeof(output)
         layer["total_param_size"] = sum(map(_sizeof, module.parameters()))
@@ -51,15 +52,17 @@ def summary(model, *args, **kwargs):
     # make a forward pass
     model(*args, **kwargs)
 
-    layer_width = max(max(map(len, map(op.itemgetter('name'), summary))), 20)
+    layer_name_width = max(max(map(len, map(op.itemgetter('name'), summary))), 20)
+    layer_type_width = max(max(map(len, map(op.itemgetter('type'), summary))), 20)
     shape_width, param_width = 40, 15
-    fmt = "{:<%d}  {:<%d} {:<%d} {:>%d}" % (layer_width, shape_width, shape_width, param_width)
+    widths = layer_name_width, layer_type_width, shape_width, shape_width, param_width
+    fmt = "{:<%d}  {:<%d}  {:<%d} {:<%d} {:>%d}" % widths
 
-    line_width = layer_width + 2 * shape_width + param_width + 5
+    line_width = sum(widths) + len(widths) + 1
     line = "-" * line_width
     dline = "=" * line_width
     print(line)
-    line_new = fmt.format("Layer (type)", "Input Shape", "Output Shape", "Param #")
+    line_new = fmt.format("Layer Name", "Layer Type", "Input Shape", "Output Shape", "Param #")
     print(line_new)
     print(dline)
     layer_names = set()
@@ -86,7 +89,7 @@ def summary(model, *args, **kwargs):
 
         output_shape = format_shapes(layer["output_shape"])
         input_shape = format_shapes(layer["input_shape"])
-        print(fmt.format(name, input_shape, output_shape, nb_params))
+        print(fmt.format(name, layer["type"], input_shape, output_shape, nb_params))
 
     # assume 4 bytes/number (float on cuda).
     input_tensors = filter(lambda i: isinstance(i, torch.Tensor),

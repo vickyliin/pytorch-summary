@@ -98,16 +98,17 @@ def summary(model, *args, **kwargs):
     for layer in layers:
         name = layer["name"]
 
-        nb_params = ""
         total_output_size += layer.pop("total_output_size")
         param_size = layer.pop("total_param_size")
+        nb_trainable_params = layer.pop("nb_trainable_params")
 
-        if name not in layer_names:
+        if name in layer_names:
+            layer["nb_params"] = None
+        else:
             total_param_size += param_size
             total_params += layer["nb_params"]
-            trainable_params += layer["nb_trainable_params"]
+            trainable_params += nb_trainable_params
             layer_names.add(name)
-            nb_params = "{0:,}".format(layer["nb_params"])
 
         output_shape = format_shapes(layer["output_shape"])
         input_shape = format_shapes(layer["input_shape"])
